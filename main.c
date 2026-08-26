@@ -10,6 +10,10 @@ typedef struct {
 
 typedef float* Matrix;
 
+#define MAT_HEAD(mat) ((MatrixHeader *)(mat) - 1) 
+#define COLS(mat) ((MAT_HEAD((mat)))->cols)
+#define ROWS(mat) ((MAT_HEAD((mat)))->rows)
+
 float *mat_zeros(size_t rows, size_t cols) {
     MatrixHeader *mat_header = malloc(sizeof(float) * rows * cols + sizeof(MatrixHeader));
     mat_header->rows = rows;
@@ -23,61 +27,62 @@ float *mat_init(Matrix bare_matrix, size_t rows, size_t cols) {
     mat_header->cols = cols;
 
     memcpy((Matrix)(mat_header + 1), bare_matrix, rows*cols*sizeof(float));
-
     return (Matrix)(mat_header + 1);
 }
 
-size_t mat_cols(Matrix mat) {
-    return ((MatrixHeader *)mat - 1)->cols;
+float *mat_at(Matrix mat, size_t r, size_t c) {
+    if (r >= MAT_HEAD(mat)->rows || c >= MAT_HEAD(mat)->cols) return NULL;
+    return &mat[r * MAT_HEAD(mat)->cols + c];
 }
 
-size_t mat_rows(Matrix mat) {
-    return ((MatrixHeader *)mat - 1)->rows;
+void switch_floats(float *a, float *b) {
+    if (*a == *b) return;
+    *(int *)a ^= *(int *)b;
+    *(int *)b ^= *(int *)a;
+    *(int *)a ^= *(int *)b;
 }
 
-void mat_transpose(Matrix mat) {
+Matrix mat_transpose(Matrix mat) {
+    Matrix temp = mat_zeros(COLS(mat), ROWS(mat));
     
-
-    ((MatrixHeader)mat - 1)->rows ^= ((MatrixHeader)mat - 1)->cols;
-    ((MatrixHeader)mat - 1)->cols ^= ((MatrixHeader)mat - 1)->rows;
-    ((MatrixHeader)mat - 1)->rows ^= ((MatrixHeader)mat - 1)->cols;
-};
-
-int mat_at(Matrix mat, size_t r, size_t c, float *cell) {
-    if (r >= mat_rows(mat) || c >= mat_cols(mat)) return -1;
-
-    *cell = mat[r * mat_cols(mat) + c];
-    return 0;
+    for (size_t i = 0; i < ROWS(mat); ++i) {
+        for (size_t j = 0; j < COLS(mat); ++j) {
+            *mat_at(temp, j, i) = *mat_at(mat, i, j);
+        }    
+    }
+    
+    free(MAT_HEAD(mat));
+    return temp;
 }
-
 
 void mat_print(Matrix mat) {
-    float cell = 0.0f;
-    size_t rows = mat_rows(mat);
-    size_t cols = mat_cols(mat);
+    size_t rows = MAT_HEAD(mat)->rows;
+    size_t cols = MAT_HEAD(mat)->cols;
 
     for (size_t r = 0;  r < rows; ++r) {
         for (size_t c = 0; c < cols; ++c) {
-            (void)mat_at(mat, r, c, &cell);
-            printf("%lf ", cell);
+            printf("%lf ", *mat_at(mat, r, c));
         }
         printf("\n");
     }
 }
 
-
 int main(int argc, char **argv) {
     float bare_matrix[] = {
         0.1f, 0.2f, 0.3f, 0.4f,
-        0.2f, 0.3f, 0.4f, 0.1f,
-        0.3f, 0.4f, 0.1f, 0.2f,
-        0.4f, 0.1f, 0.2f, 0.3f
+        0.5f, 0.6f, 0.7f, 0.8f,
+        0.9f, 1.0f, 1.1f, 1.2f,
     };
     float *mat_a = mat_zeros(4, 4);
-    printf("Allocated matrix-A (%ldx%ld)!\n", mat_rows(mat_a), mat_cols(mat_a));
+    printf("Allocated matrix-A (%ldx%ld)!\n", MAT_HEAD(mat_a)->rows, MAT_HEAD(mat_a)->cols);
     mat_print(mat_a);
-    float *mat_b = mat_init(bare_matrix, 4, 4);
-    printf("Allocated matrix-B (%ldx%ld)!\n", mat_rows(mat_b), mat_cols(mat_b));
+    float *mat_b = mat_init(bare_matrix, 3, 4);
+    printf("Allocated matrix-B (%ldx%ld)!\n", MAT_HEAD(mat_b)->rows, MAT_HEAD(mat_b)->cols);
+    mat_print(mat_b);
+    mat_b = mat_transpose(mat_b);
+    mat_b = mat_transpose(mat_b);
+    printf("Transposed matrix-B (%ldx%ld)!\n", MAT_HEAD(mat_b)->rows, MAT_HEAD(mat_b)->cols);
+
     mat_print(mat_b);
     return 0;
 }

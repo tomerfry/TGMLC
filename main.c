@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
+#include <stdlib.h>
 
 
 typedef struct {
@@ -10,18 +11,21 @@ typedef struct {
 
 typedef float* Matrix;
 
+
 #define MAT_HEAD(mat) ((MatrixHeader *)(mat) - 1) 
 #define COLS(mat) ((MAT_HEAD((mat)))->cols)
 #define ROWS(mat) ((MAT_HEAD((mat)))->rows)
 
-float *mat_zeros(size_t rows, size_t cols) {
+Matrix mat_zeros(size_t rows, size_t cols) {
     MatrixHeader *mat_header = malloc(sizeof(float) * rows * cols + sizeof(MatrixHeader));
     mat_header->rows = rows;
     mat_header->cols = cols;
+
+    bzero((Matrix)(mat_header + 1), rows*cols*sizeof(float));
     return (Matrix)(mat_header + 1);
 }
 
-float *mat_init(Matrix bare_matrix, size_t rows, size_t cols) {
+Matrix mat_init(Matrix bare_matrix, size_t rows, size_t cols) {
     MatrixHeader *mat_header = malloc(sizeof(float) * rows * cols + sizeof(MatrixHeader));
     mat_header->rows = rows;
     mat_header->cols = cols;
@@ -35,12 +39,28 @@ float *mat_at(Matrix mat, size_t r, size_t c) {
     return &mat[r * MAT_HEAD(mat)->cols + c];
 }
 
+float rand_float() {
+    return ((float)random()) / (float)RAND_MAX;
+}
+
+Matrix mat_rand(size_t rows, size_t cols) {
+    Matrix mat = mat_zeros(rows, cols);
+    
+    for (size_t r = 0; r < rows; ++r) {
+        for (size_t c = 0; c < rows; ++c) {
+            *mat_at(mat, r, c) = rand_float();
+        }
+    }
+    return mat;
+}
+
 void switch_floats(float *a, float *b) {
     if (*a == *b) return;
     *(int *)a ^= *(int *)b;
     *(int *)b ^= *(int *)a;
     *(int *)a ^= *(int *)b;
 }
+
 
 Matrix mat_transpose(Matrix mat) {
     Matrix temp = mat_zeros(COLS(mat), ROWS(mat));
@@ -67,7 +87,7 @@ void mat_print(Matrix mat) {
     }
 }
 
-int main(int argc, char **argv) {
+void part_1() {
     float bare_matrix[] = {
         0.1f, 0.2f, 0.3f, 0.4f,
         0.5f, 0.6f, 0.7f, 0.8f,
@@ -80,10 +100,28 @@ int main(int argc, char **argv) {
     printf("Allocated matrix-B (%ldx%ld)!\n", MAT_HEAD(mat_b)->rows, MAT_HEAD(mat_b)->cols);
     mat_print(mat_b);
     mat_b = mat_transpose(mat_b);
-    mat_b = mat_transpose(mat_b);
     printf("Transposed matrix-B (%ldx%ld)!\n", MAT_HEAD(mat_b)->rows, MAT_HEAD(mat_b)->cols);
 
     mat_print(mat_b);
-    return 0;
 }
+
+void part_2() {
+    float data[] = {
+        1.0, 1.0, 0.0,
+        1.0, 0.0, 1.0,
+        0.0, 1.0, 1.0,
+        0.0, 0.0, 0.0
+    };
+    
+    srandom(0x1337);
+    Matrix mat = mat_rand(2, 2);
+    mat_print(mat);
+}
+
+int main(int argc, char **argv) {
+    // part_1();
+    part_2();
+}
+
+
 

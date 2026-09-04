@@ -22,6 +22,8 @@ typedef struct {
     Matrix w;
     Matrix b;
     Matrix result;
+    Matrix w_grad;
+    Matrix b_grad;
 } NNLayer;
 
 typedef NNLayer* NeuralNet;
@@ -33,7 +35,8 @@ typedef NNLayer* NeuralNet;
 #define NN_HEAD(nn) ((NeuralNetwork *)(nn) - 1)
 #define NN_COUNT(nn) (NN_HEAD((nn))->lcount)
 #define NN_LAST_LAYER(nn) ((nn)[NN_COUNT((nn))-1])
-#define EPS (0.01f)
+#define EPS (1e-3)
+#define RATE (1e-1)
 
 float sigmoidf(float x) {
     return 1.0f / (1.0f + expf(-x));
@@ -144,23 +147,27 @@ void mat_dot(Matrix a, Matrix b, Matrix result) {
     }
 }
 
-NeuralNet nn_init(size_t lcount, size_t input_size, size_t shapes[]) {
+NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
     if (lcount < 1) return NULL;
 
     NeuralNetwork *nn_head = malloc(sizeof(NeuralNetwork) + (sizeof(NNLayer) * lcount));
     nn_head->lcount = lcount;
     NeuralNet nn = (NeuralNet)(nn_head + 1);
 
-    nn[0].input = mat_zeros(1, input_size);
-    nn[0].w = mat_rand(input_size, shapes[0]);
+    nn[0].input = mat_zeros(1, inputs_amount);
+    nn[0].w = mat_rand(inputs_amount, shapes[0]);
     nn[0].b = mat_rand(1, shapes[0]);
     nn[0].result = mat_zeros(1, shapes[0]);
+    nn[0].w_grad = mat_zeros(inputs_amount, shapes[0]);
+    nn[0].b_grad = mat_zeros(inputs_amount, shapes[0]);
 
     for (size_t i = 1; i < lcount; ++i) {
         nn[i].input = mat_zeros(1, shapes[i-1]);
         nn[i].w = mat_rand(shapes[i-1], shapes[i]);
         nn[i].b = mat_rand(1, shapes[i]);
         nn[i].result = mat_zeros(1, shapes[i]);
+        nn[i].w_grad = mat_zeros(shapes[i-1], shapes[i]);
+        nn[i].b_grad = mat_zeros(1, shapes[i]);
     }
     return nn;
 }
@@ -179,35 +186,104 @@ void nn_passthrough(NeuralNet nn, float input[]) {
     }
 }
 
-float nn_cost(NeuralNet nn, size_t inputs_count, float inputs[], float results[]) {
+float nn_cost(NeuralNet nn, Matrix inputs, Matrix results) {
     float sum = 0.0f;
-    for (size_t i = 0; i < inputs_count; ++i) {
-        nn_passthrough(nn, &inputs[i]);
-        float v = results[i] - *mat_at(NN_LAST_LAYER(nn).result, 0, 0);
+    for (size_t r = 0; r < ROWS(inputs); ++r) {
+        nn_passthrough(nn, mat_at(inputs, r, 0));
+        float v = *mat_at(results, r, 0) - *mat_at(NN_LAST_LAYER(nn).result, 0, 0);
         sum += v*v;
     }
 
-    return sum/inputs_count;
+    return sum/ROWS(inputs);
+}
+
+
+void nn_finite_diff(NeuralNet nn, Matrix inputs, Matrix results) {
+    float cost = nn_cost(nn, inputs, results);
+    float saved;
+
+    for (size_t l = 0; l < NN_COUNT(nn); ++l) {
+        for (size_t r = 0; r < ROWS(nn[l].w); ++r) {
+            for (size_t c = 0; c < COLS(nn[l].w); ++c) {
+                saved = *mat_at(nn[l].w, r, c);
+                *mat_at(nn[l].w, r, c) += EPS;
+                *mat_at(nn[l].w_grad, r, c) = (nn_cost(nn, inputs, results) - cost) / EPS;
+                *mat_at(nn[l].w, r, c) = saved;
+            }
+        }
+
+        for (size_t r = 0; r < ROWS(nn[l].b); ++r) {
+            for (size_t c = 0; c < COLS(nn[l].b); ++c) {
+                saved = *mat_at(nn[l].b, r, c);
+                *mat_at(nn[l].b, r, c) += EPS;
+                *mat_at(nn[l].b_grad, r, c) = (nn_cost(nn, inputs, results) - cost) / EPS;
+                *mat_at(nn[l].b, r, c) = saved;
+            }               
+        }
+
+    }
+}
+
+void nn_learn(NeuralNet nn, float inputs[], float results[]) {
+    for (size_t l = 0; l < NN_COUNT(nn); ++l) {
+        for (size_t r = 0; r < ROWS(nn[l].w); ++r) {
+            for (size_t c = 0; c < COLS(nn[l].w); ++c) {
+                *mat_at(nn[l].w, r, c) -= RATE * *mat_at(nn[l].w_grad, r, c);
+            }
+        }
+
+        for (size_t r = 0; r < ROWS(nn[l].b); ++r) {
+            for (size_t c = 0; c < COLS(nn[l].b); ++c) {
+                *mat_at(nn[l].b, r, c) -= RATE * *mat_at(nn[l].b_grad, r, c);
+            }               
+        }
+    }
+}
+
+void nn_print(NeuralNet nn) {
+    for (size_t l = 0; l < NN_COUNT(nn); ++l) {
+        printf("===========\n");
+        printf("============ Layer %ld Weights ============\n", l);
+        mat_print(nn[l].w);
+        printf("============ Layer %ld Biases ============\n", l);
+        mat_print(nn[l].b);
+        printf("===========\n");
+    }
+    printf("\n");
+}
+
+void nn_train(NeuralNet nn, Matrix inputs, Matrix results) {
+    for (size_t i = 0; i < 100000; ++i) {
+        nn_finite_diff(nn, inputs, results);                
+        nn_learn(nn, inputs, results);
+        printf("cost - %lf\n", nn_cost(nn, inputs, results));
+    }
 }
 
 int main(int argc, char **argv) {
-    float inputs[] = {
+    float inputs_arr[] = {
         1.0, 1.0,
         1.0, 0.0,
         0.0, 1.0,
         0.0, 0.0
     };
 
-    float results[] = {
+    Matrix inputs = mat_init(inputs_arr, 4, 2);
+
+    float results_arr[] = {
         0.0,
         1.0,
         1.0,
         0.0
     };
+    Matrix results = mat_init(results_arr, 4, 1);
     
     srandom(0x1337);
-    size_t shapes[] = {2, 1};
-    NeuralNet nn = nn_init(2, 2, shapes);
-
-    printf("cost is %lf", nn_cost(nn, 4, inputs, results));
+    size_t shapes[] = {2, 2, 1};
+    NeuralNet nn = nn_init(2, 3, shapes);
+    nn_train(nn, inputs, results);
+    for (size_t r = 0; r < ROWS(inputs); ++r) {
+        nn_passthrough(nn, mat_at(inputs, r, 0));
+        printf("%lf ^ %lf = %lf\n", *mat_at(inputs, r, 0), *mat_at(inputs, r, 1), *mat_at(NN_LAST_LAYER(nn).result, 0, 0));
+    }
 } 

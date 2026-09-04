@@ -2,7 +2,9 @@
 #include <string.h>
 #include <malloc.h>
 #include <stdlib.h>
+#include <math.h>
 
+// gcc -g main.c -lm
 
 typedef struct {
     size_t rows;
@@ -16,9 +18,10 @@ typedef struct {
 } NeuralNetwork;
 
 typedef struct {
-    Matrix *w;
-    Matrix *b;
-    Matrix *r;
+    Matrix input;
+    Matrix w;
+    Matrix b;
+    Matrix result;
 } NNLayer;
 
 typedef NNLayer* NeuralNet;
@@ -28,7 +31,13 @@ typedef NNLayer* NeuralNet;
 #define ROWS(mat) ((MAT_HEAD((mat)))->rows)
 
 #define NN_HEAD(nn) ((NeuralNetwork *)(nn) - 1)
-#define COUNT(nn) (NN_HEAD((nn))->lcount)
+#define NN_COUNT(nn) (NN_HEAD((nn))->lcount)
+#define NN_LAST_LAYER(nn) ((nn)[NN_COUNT((nn))-1])
+#define EPS (0.01f)
+
+float sigmoidf(float x) {
+    return 1.0f / (1.0f + expf(-x));
+}
 
 Matrix mat_zeros(size_t rows, size_t cols) {
     MatrixHeader *mat_header = malloc(sizeof(float) * rows * cols + sizeof(MatrixHeader));
@@ -113,6 +122,14 @@ void mat_add(Matrix a, Matrix b, Matrix result) {
     }
 }
 
+void mat_apply(Matrix mat, float (*activation)(float)) {
+    for (size_t r = 0; r < ROWS(mat); ++r) {
+        for (size_t c = 0;  c < COLS(mat); ++c) {
+            *mat_at(mat, r, c) = (*activation)(*mat_at(mat, r, c));
+        }
+    }
+}
+
 void mat_dot(Matrix a, Matrix b, Matrix result) {
     for (size_t r = 0; r < ROWS(result); ++r) {
         for (size_t c = 0;  c < COLS(result); ++c) {
@@ -128,44 +145,42 @@ void mat_dot(Matrix a, Matrix b, Matrix result) {
 }
 
 NeuralNet nn_init(size_t lcount, size_t input_size, size_t shapes[]) {
-    if (lcound < 1 || sizeof(shapes) == 0) return NULL;
+    if (lcount < 1) return NULL;
 
-    NeuralNetwork *nn_head = malloc(sizeof(NeuralNetwork) + (sizeof(NNLayer) * shapes));
+    NeuralNetwork *nn_head = malloc(sizeof(NeuralNetwork) + (sizeof(NNLayer) * lcount));
     nn_head->lcount = lcount;
     NeuralNet nn = (NeuralNet)(nn_head + 1);
 
+    nn[0].input = mat_zeros(1, input_size);
     nn[0].w = mat_rand(input_size, shapes[0]);
     nn[0].b = mat_rand(1, shapes[0]);
-    nn[0].r = mat_rand(1, shapes[0]);
+    nn[0].result = mat_rand(1, shapes[0]);
 
     for (size_t i = 1; i < lcount; ++i) {
+        nn[i].input = mat_zeros(1, shapes[i-1]);
         nn[i].w = mat_rand(shapes[i-1], shapes[i]);
         nn[i].b = mat_rand(1, shapes[i]);
-        nn[i].r = mat_rand(1, shapes[i]);
+        nn[i].result = mat_rand(1, shapes[i]);
     }
     return nn;
 }
 
-void part_1() {
-    float bare_matrix[] = {
-        0.1f, 0.2f, 0.3f, 0.4f,
-        0.5f, 0.6f, 0.7f, 0.8f,
-        0.9f, 1.0f, 1.1f, 1.2f,
-    };
-    float *mat_a = mat_zeros(4, 4);
-    printf("Allocated matrix-A (%ldx%ld)!\n", MAT_HEAD(mat_a)->rows, MAT_HEAD(mat_a)->cols);
-    mat_print(mat_a);
-    float *mat_b = mat_init(bare_matrix, 3, 4);
-    printf("Allocated matrix-B (%ldx%ld)!\n", MAT_HEAD(mat_b)->rows, MAT_HEAD(mat_b)->cols);
-    mat_print(mat_b);
-    mat_b = mat_transpose(mat_b);
-    printf("Transposed matrix-B (%ldx%ld)!\n", MAT_HEAD(mat_b)->rows, MAT_HEAD(mat_b)->cols);
+void nn_passthrough(NeuralNet nn, float input[]) {
+    
+    mat_assign(nn[0].input, input);
+    mat_dot(nn[0].input, nn[0].w, nn[0].result);
+    mat_add(nn[0].result, nn[0].b, nn[0].result);
+    mat_apply(nn[0].result, &sigmoidf);
 
-    mat_print(mat_b);
+    for (size_t l = 1; l < NN_COUNT(nn); ++l) {
+        mat_assign(nn[l].input, nn[l-1].result);
+        mat_dot(nn[l].input, nn[l].w, nn[l].result);
+        mat_add(nn[l].result, nn[l].b, nn[l].result);
+        mat_apply(nn[l].result, &sigmoidf);
+    }
 }
 
-
-void part_2() {
+int main(int argc, char **argv) {
     float inputs[][2] = {
         {1.0, 1.0},
         {1.0, 0.0},
@@ -181,31 +196,11 @@ void part_2() {
     };
     
     srandom(0x1337);
-    Matrix x = mat_rand(1, 2);
-    Matrix w1 = mat_rand(2, 2);
-    Matrix b1 = mat_rand(1, 2);
-    Matrix r1 = mat_rand(1, 2);
-
-    Matrix w2 = mat_rand(2, 1);
-    Matrix b2 = mat_rand(1, 1);
-    Matrix r2 = mat_zeros(1, 1);
-
-    mat_assign(x, inputs[0]);
-
-    //Layer 1
-    mat_dot(x, w1, r1);
-    mat_add(r1, b1, r1);
-
-    //Layer 2
-    mat_dot(r1, w2, r2);
-    mat_add(r2, b2, r2);
-
-
-}
-
-int main(int argc, char **argv) {
-    //part_1();
-    part_2();
-}
-
-
+    size_t shapes[] = {2, 2};
+    NeuralNet nn = nn_init(2, 2, shapes);
+    
+    for (int i = 0; i < 4; ++i) {
+        nn_passthrough(nn, inputs[i]);
+        printf("%lf\n", *mat_at(NN_LAST_LAYER(nn).result, 0, 0));
+    }
+} 

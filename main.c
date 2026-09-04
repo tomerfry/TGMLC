@@ -154,19 +154,18 @@ NeuralNet nn_init(size_t lcount, size_t input_size, size_t shapes[]) {
     nn[0].input = mat_zeros(1, input_size);
     nn[0].w = mat_rand(input_size, shapes[0]);
     nn[0].b = mat_rand(1, shapes[0]);
-    nn[0].result = mat_rand(1, shapes[0]);
+    nn[0].result = mat_zeros(1, shapes[0]);
 
     for (size_t i = 1; i < lcount; ++i) {
         nn[i].input = mat_zeros(1, shapes[i-1]);
         nn[i].w = mat_rand(shapes[i-1], shapes[i]);
         nn[i].b = mat_rand(1, shapes[i]);
-        nn[i].result = mat_rand(1, shapes[i]);
+        nn[i].result = mat_zeros(1, shapes[i]);
     }
     return nn;
 }
 
 void nn_passthrough(NeuralNet nn, float input[]) {
-    
     mat_assign(nn[0].input, input);
     mat_dot(nn[0].input, nn[0].w, nn[0].result);
     mat_add(nn[0].result, nn[0].b, nn[0].result);
@@ -180,12 +179,23 @@ void nn_passthrough(NeuralNet nn, float input[]) {
     }
 }
 
+float nn_cost(NeuralNet nn, size_t inputs_count, float inputs[], float results[]) {
+    float sum = 0.0f;
+    for (size_t i = 0; i < inputs_count; ++i) {
+        nn_passthrough(nn, &inputs[i]);
+        float v = results[i] - *mat_at(NN_LAST_LAYER(nn).result, 0, 0);
+        sum += v*v;
+    }
+
+    return sum/inputs_count;
+}
+
 int main(int argc, char **argv) {
-    float inputs[][2] = {
-        {1.0, 1.0},
-        {1.0, 0.0},
-        {0.0, 1.0},
-        {0.0, 0.0}
+    float inputs[] = {
+        1.0, 1.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        0.0, 0.0
     };
 
     float results[] = {
@@ -196,11 +206,8 @@ int main(int argc, char **argv) {
     };
     
     srandom(0x1337);
-    size_t shapes[] = {2, 2};
+    size_t shapes[] = {2, 1};
     NeuralNet nn = nn_init(2, 2, shapes);
-    
-    for (int i = 0; i < 4; ++i) {
-        nn_passthrough(nn, inputs[i]);
-        printf("%lf\n", *mat_at(NN_LAST_LAYER(nn).result, 0, 0));
-    }
+
+    printf("cost is %lf", nn_cost(nn, 4, inputs, results));
 } 

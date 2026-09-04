@@ -159,7 +159,7 @@ NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
     nn[0].b = mat_rand(1, shapes[0]);
     nn[0].result = mat_zeros(1, shapes[0]);
     nn[0].w_grad = mat_zeros(inputs_amount, shapes[0]);
-    nn[0].b_grad = mat_zeros(inputs_amount, shapes[0]);
+    nn[0].b_grad = mat_zeros(1, shapes[0]);
 
     for (size_t i = 1; i < lcount; ++i) {
         nn[i].input = mat_zeros(1, shapes[i-1]);

@@ -24,6 +24,7 @@ typedef struct {
     Matrix result;
     Matrix w_grad;
     Matrix b_grad;
+    Matrix temp_grad;
 } NNLayer;
 
 typedef NNLayer* NeuralNet;
@@ -160,6 +161,7 @@ NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
     nn[0].result = mat_zeros(1, shapes[0]);
     nn[0].w_grad = mat_zeros(inputs_amount, shapes[0]);
     nn[0].b_grad = mat_zeros(1, shapes[0]);
+    nn[0].temp_grad = mat_zeros(1, shapes[0]);
 
     for (size_t i = 1; i < lcount; ++i) {
         nn[i].input = mat_zeros(1, shapes[i-1]);
@@ -168,6 +170,7 @@ NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
         nn[i].result = mat_zeros(1, shapes[i]);
         nn[i].w_grad = mat_zeros(shapes[i-1], shapes[i]);
         nn[i].b_grad = mat_zeros(1, shapes[i]);
+        nn[i].temp_grad = mat_zeros(1, shapes[i]);
     }
     return nn;
 }
@@ -197,7 +200,6 @@ float nn_cost(NeuralNet nn, Matrix inputs, Matrix results) {
     return sum/ROWS(inputs);
 }
 
-
 void nn_finite_diff(NeuralNet nn, Matrix inputs, Matrix results) {
     float cost = nn_cost(nn, inputs, results);
     float saved;
@@ -221,6 +223,50 @@ void nn_finite_diff(NeuralNet nn, Matrix inputs, Matrix results) {
             }               
         }
 
+    }
+}
+
+void nn_backprop(NeuralNet nn, Matrix inputs, Matrix results) {
+    
+    for (size_t l = 0; l < NN_COUNT(nn); ++l) {
+        bzero(nn[l].w_grad, ROWS(nn[l].w_grad)*COLS((nn[l].w_grad))*sizeof(float));
+        bzero(nn[l].b_grad, ROWS(nn[l].b_grad)*COLS((nn[l].b_grad))*sizeof(float));
+    }
+
+    for (size_t i = 0; i < ROWS(inputs); ++i) {
+        nn_passthrough(nn, mat_at(inputs, i, 0));
+        for (size_t j = 0; j < COLS(results); ++j) {
+            *mat_at(NN_LAST_LAYER(nn).temp_grad, 0, j) = *mat_at(NN_LAST_LAYER(nn).result, 0, j) - *mat_at(results, i, j);
+        }
+
+        for (size_t l = NN_COUNT(nn); l-- > 0;) {
+            if (l > 0) bzero(nn[l-1].temp_grad, ROWS(nn[l-1].temp_grad)*COLS(nn[l-1].temp_grad)*sizeof(float));
+            for (size_t j = 0; j < COLS(nn[l].result); ++j) {
+                float a = *mat_at(nn[l].result, 0, j);
+                float da = *mat_at(nn[l].temp_grad, 0, j);
+                *mat_at(nn[l].b_grad, 0, j) += 2*da*a*(1-a);
+                for (size_t k = 0; k < COLS(nn[l].input); ++k) {
+                    float pa = *mat_at(nn[l].input, 0, k);
+                    float w = *mat_at(nn[l].w, k, j);
+                    *mat_at(nn[l].w_grad, k, j) += 2*da*a*(1-a)*pa;
+                    if (l > 0) *mat_at(nn[l-1].temp_grad, 0, k) += 2*da*a*(1-a)*w;
+                }
+            }
+        }
+    }
+
+    for (size_t l = 0; l < NN_COUNT(nn); ++l) {
+        for (size_t j = 0; j < ROWS(nn[l].w_grad); j++) {
+            for (size_t k = 0; k < COLS(nn[l].w_grad); k++) {
+                *mat_at(nn[l].w_grad, j, k) /= ROWS(inputs);
+            }
+        }
+
+        for (size_t j = 0; j < ROWS(nn[l].b_grad); j++) {
+            for (size_t k = 0; k < COLS(nn[l].b_grad); k++) {
+                *mat_at(nn[l].b_grad, j, k) /= ROWS(inputs);
+            }
+        }
     }
 }
 
@@ -254,7 +300,8 @@ void nn_print(NeuralNet nn) {
 
 void nn_train(NeuralNet nn, Matrix inputs, Matrix results) {
     for (size_t i = 0; i < 100000; ++i) {
-        nn_finite_diff(nn, inputs, results);                
+        // nn_finite_diff(nn, inputs, results);                
+        nn_backprop(nn, inputs, results);
         nn_learn(nn, inputs, results);
         printf("cost - %lf\n", nn_cost(nn, inputs, results));
     }

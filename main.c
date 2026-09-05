@@ -302,7 +302,7 @@ void nn_print(NeuralNet nn) {
 }
 
 void nn_train(NeuralNet nn, Matrix inputs, Matrix results) {
-    for (size_t i = 0; i < 1000000; ++i) {
+    for (size_t i = 0; i < 100000; ++i) {
         // nn_finite_diff(nn, inputs, results);                
         nn_backprop(nn, inputs, results);
         nn_learn(nn, inputs, results);

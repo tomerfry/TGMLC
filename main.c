@@ -191,12 +191,10 @@ void nn_passthrough(NeuralNet nn, float input[]) {
 
 float nn_cost(NeuralNet nn, Matrix inputs, Matrix results) {
     float sum = 0.0f;
-    for (size_t r = 0; r < ROWS(inputs); ++r) {
-        nn_passthrough(nn, mat_at(inputs, r, 0));
-        for (size_t c = 0; c < COLS(results); ++c) {
-            float v = *mat_at(results, r, c) - *mat_at(NN_LAST_LAYER(nn).result, 0, c);
-            sum += v*v;
-        }
+    nn_passthrough(nn, inputs);
+    for (size_t c = 0; c < COLS(results); ++c) {
+        float v = *mat_at(results, 0, c) - *mat_at(NN_LAST_LAYER(nn).result, 0, c);
+        sum += v*v;
     }
 
     return sum/(ROWS(inputs)*COLS(results));

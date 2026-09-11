@@ -19,6 +19,7 @@ typedef struct {
 } TensorHeader;
 
 typedef uint32_t *Tensor;
+typedef float *FloatTensor;
 
 #define TENSOR_HEAD(t) ((TensorHeader *)(t) - 1)
 #define TENSOR_SHAPE(t) (TENSOR_HEAD((t))->shape)
@@ -162,12 +163,14 @@ void tensor_print(Tensor t) {
 
 
 int main(int argc, char **argv) {
-    char *data = "tomer\nkeren";
-    size_t lines_count = 1;
-    char *mut_data = strdup(data);
-    char **lines = mut_split(mut_data, strlen(data), &lines_count);
+    char *raw = "tomer\nkeren";
+    char *lines[] = {
+        "tomer",
+        "keren"
+    };
+    size_t lines_count = 2;
     
-    char * vocab = get_vocab(data, strlen(data));
+    char * vocab = get_vocab(raw, strlen(raw));
     size_t shape[] = {0, 0};
     shape[0] = strlen(vocab) + 1;
     shape[1] = strlen(vocab) + 1;
@@ -175,7 +178,6 @@ int main(int argc, char **argv) {
     tensor_print(bigram);
     
     for (size_t i = 0; i < lines_count; ++i) {
-        printf("%s\n", lines[i]);
         tok_t *t = (tok_t *)malloc(strlen(lines[i])+2);
         tokenize(lines[i], strlen(lines[i]), t);
         print_toks(t, strlen(lines[i])+2);

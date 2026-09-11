@@ -161,6 +161,15 @@ void tensor_print(Tensor t) {
     }
 }
 
+void assign_bigram(Tensor bigram, tok_t *word, size_t word_len) {
+    size_t coord[] = {0, 0};
+    for (int i = 0, j = 1; i < word_len-1; ++i, ++j) {
+        coord[0] = word[i];
+        coord[1] = word[j];
+        printf("%ld, %ld\n", coord[0], coord[1]);
+        *tensor_at(bigram, coord) += 1;
+    }
+}
 
 int main(int argc, char **argv) {
     char *raw = "tomer\nkeren";
@@ -176,12 +185,14 @@ int main(int argc, char **argv) {
     shape[1] = strlen(vocab) + 1;
     Tensor bigram = tensor_zeros(2, shape);
     tensor_print(bigram);
-    
     for (size_t i = 0; i < lines_count; ++i) {
-        tok_t *t = (tok_t *)malloc(strlen(lines[i])+2);
-        tokenize(lines[i], strlen(lines[i]), t);
-        print_toks(t, strlen(lines[i])+2);
-        free(t);
+        tok_t *toks = (tok_t *)malloc((strlen(lines[i])+2) * sizeof(tok_t));
+        tokenize(vocab, strlen(vocab), lines[i], strlen(lines[i]), toks);
+        assign_bigram(bigram, toks, strlen(lines[i]+2));
+        print_toks(toks, strlen(lines[i])+2);
+        free(toks);
     }
+    printf("%ld\n", TENSOR_HEAD(bigram)->shape[0]);
+    printf("%ld\n", TENSOR_HEAD(bigram)->shape[1]);
 } 
 

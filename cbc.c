@@ -2,6 +2,9 @@
 #include <string.h>
 #include <malloc.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <math.h>
 
 // gcc -g main.c -lm
@@ -37,10 +40,18 @@ typedef NNLayer* NeuralNet;
 #define NN_COUNT(nn) (NN_HEAD((nn))->lcount)
 #define NN_LAST_LAYER(nn) ((nn)[NN_COUNT((nn))-1])
 #define EPS (1e-3)
-#define RATE (1.0f)
+#define RATE (0.1f)
+#define BATCH (64)
 
 float sigmoidf(float x) {
     return 1.0f / (1.0f + expf(-x));
+}
+
+
+void pick_batch(size_t *idx, size_t n_rows) {
+    for (size_t i = 0; i < BATCH; ++i) {
+        idx[i] = random() % n_rows;
+    }
 }
 
 Matrix mat_zeros(size_t rows, size_t cols) {
@@ -52,6 +63,7 @@ Matrix mat_zeros(size_t rows, size_t cols) {
     return (Matrix)(mat_header + 1);
 }
 
+
 Matrix mat_init(Matrix bare_matrix, size_t rows, size_t cols) {
     MatrixHeader *mat_header = malloc(sizeof(float) * rows * cols + sizeof(MatrixHeader));
     mat_header->rows = rows;
@@ -61,19 +73,23 @@ Matrix mat_init(Matrix bare_matrix, size_t rows, size_t cols) {
     return (Matrix)(mat_header + 1);
 }
 
+
 Matrix mat_assign(Matrix mat, float *values) {
     memcpy(mat, values, COLS(mat)*ROWS(mat)*sizeof(float));
     return mat;
 }
+
 
 float *mat_at(Matrix mat, size_t r, size_t c) {
     if (r >= MAT_HEAD(mat)->rows || c >= MAT_HEAD(mat)->cols) return NULL;
     return &mat[r * MAT_HEAD(mat)->cols + c];
 }
 
+
 float rand_float() {
     return ((float)random()) / (float)RAND_MAX;
 }
+
 
 Matrix mat_rand(size_t rows, size_t cols) {
     Matrix mat = mat_zeros(rows, cols);
@@ -86,12 +102,14 @@ Matrix mat_rand(size_t rows, size_t cols) {
     return mat;
 }
 
+
 void switch_floats(float *a, float *b) {
     if (*a == *b) return;
     float temp = *a;
     *a = *b;
     *b = temp;
 }
+
 
 Matrix mat_transpose(Matrix mat) {
     Matrix temp = mat_zeros(COLS(mat), ROWS(mat));
@@ -106,6 +124,7 @@ Matrix mat_transpose(Matrix mat) {
     return temp;
 }
 
+
 void mat_print(Matrix mat) {
     size_t rows = MAT_HEAD(mat)->rows;
     size_t cols = MAT_HEAD(mat)->cols;
@@ -118,6 +137,7 @@ void mat_print(Matrix mat) {
     }
 }
 
+
 void mat_add(Matrix a, Matrix b, Matrix result) {
     for (size_t r = 0; r < ROWS(result); ++r) {
         for (size_t c = 0;  c < COLS(result); ++c) {
@@ -126,6 +146,7 @@ void mat_add(Matrix a, Matrix b, Matrix result) {
     }
 }
 
+
 void mat_apply(Matrix mat, float (*activation)(float)) {
     for (size_t r = 0; r < ROWS(mat); ++r) {
         for (size_t c = 0;  c < COLS(mat); ++c) {
@@ -133,6 +154,7 @@ void mat_apply(Matrix mat, float (*activation)(float)) {
         }
     }
 }
+
 
 void mat_dot(Matrix a, Matrix b, Matrix result) {
     for (size_t r = 0; r < ROWS(result); ++r) {
@@ -147,6 +169,7 @@ void mat_dot(Matrix a, Matrix b, Matrix result) {
         }
     }
 }
+
 
 NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
     if (lcount < 1) return NULL;
@@ -175,6 +198,7 @@ NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
     return nn;
 }
 
+
 void nn_passthrough(NeuralNet nn, float input[]) {
     mat_assign(nn[0].input, input);
     mat_dot(nn[0].input, nn[0].w, nn[0].result);
@@ -189,6 +213,7 @@ void nn_passthrough(NeuralNet nn, float input[]) {
     }
 }
 
+
 float nn_cost(NeuralNet nn, Matrix inputs, Matrix results) {
     float sum = 0.0f;
     for (size_t r = 0; r < ROWS(inputs); ++r) {
@@ -201,6 +226,7 @@ float nn_cost(NeuralNet nn, Matrix inputs, Matrix results) {
 
     return sum/(ROWS(inputs)*COLS(results));
 }
+
 
 void nn_finite_diff(NeuralNet nn, Matrix inputs, Matrix results) {
     float cost = nn_cost(nn, inputs, results);
@@ -228,18 +254,22 @@ void nn_finite_diff(NeuralNet nn, Matrix inputs, Matrix results) {
     }
 }
 
-void nn_backprop(NeuralNet nn, Matrix inputs, Matrix results) {
-    
+
+float nn_backprop(NeuralNet nn, Matrix inputs, Matrix results, size_t *idx, size_t n) {
+    float batch_cost = 0.0f;
+
     for (size_t l = 0; l < NN_COUNT(nn); ++l) {
         bzero(nn[l].w_grad, ROWS(nn[l].w_grad)*COLS((nn[l].w_grad))*sizeof(float));
         bzero(nn[l].b_grad, ROWS(nn[l].b_grad)*COLS((nn[l].b_grad))*sizeof(float));
     }
 
-    for (size_t i = 0; i < ROWS(inputs); ++i) {
+    for (size_t bi = 0; bi < n; ++bi) {
+        size_t i = idx[bi];
         nn_passthrough(nn, mat_at(inputs, i, 0));
         for (size_t j = 0; j < COLS(results); ++j) {
-            *mat_at(NN_LAST_LAYER(nn).temp_grad, 0, j) = 2.0f * (*mat_at(NN_LAST_LAYER(nn).result, 0, j) - *mat_at(results, i, j));
-            *mat_at(NN_LAST_LAYER(nn).temp_grad, 0, j) /= COLS(results);
+            float v = *mat_at(NN_LAST_LAYER(nn).result, 0, j) - *mat_at(results, i, j);
+            batch_cost += v*v;
+            *mat_at(NN_LAST_LAYER(nn).temp_grad, 0, j) = 2.0f * v / COLS(results);
         }
 
         for (size_t l = NN_COUNT(nn); l-- > 0;) {
@@ -262,17 +292,20 @@ void nn_backprop(NeuralNet nn, Matrix inputs, Matrix results) {
     for (size_t l = 0; l < NN_COUNT(nn); ++l) {
         for (size_t j = 0; j < ROWS(nn[l].w_grad); j++) {
             for (size_t k = 0; k < COLS(nn[l].w_grad); k++) {
-                *mat_at(nn[l].w_grad, j, k) /= ROWS(inputs);
+                *mat_at(nn[l].w_grad, j, k) /= n;
             }
         }
 
         for (size_t j = 0; j < ROWS(nn[l].b_grad); j++) {
             for (size_t k = 0; k < COLS(nn[l].b_grad); k++) {
-                *mat_at(nn[l].b_grad, j, k) /= ROWS(inputs);
+                *mat_at(nn[l].b_grad, j, k) /= n;
             }
         }
     }
+
+    return batch_cost / (n * COLS(results));
 }
+
 
 void nn_learn(NeuralNet nn, float inputs[], float results[]) {
     for (size_t l = 0; l < NN_COUNT(nn); ++l) {
@@ -290,6 +323,25 @@ void nn_learn(NeuralNet nn, float inputs[], float results[]) {
     }
 }
 
+
+void nn_train(NeuralNet nn, Matrix inputs, Matrix results, size_t epochs) {
+    size_t idx[BATCH];
+    size_t updates_per_epoch = ROWS(inputs) / BATCH;
+    float avg = 0.0f;
+
+    for (size_t e = 0; e < epochs; ++e) {
+        for (size_t u = 0; u < updates_per_epoch; ++u) {
+            pick_batch(idx, ROWS(inputs));
+            float c = nn_backprop(nn, inputs, results, idx, BATCH);
+            nn_learn(nn, inputs, results);
+
+            avg = (avg == 0.0f) ? c : 0.99f*avg + 0.01f*c;   // running mean over ~100 batches
+            if (u % 500 == 0) printf("epoch %zu  update %zu  cost ~ %f\n", e, u, avg);
+        }
+    }
+} 
+
+
 void nn_print(NeuralNet nn) {
     for (size_t l = 0; l < NN_COUNT(nn); ++l) {
         printf("===========\n");
@@ -302,6 +354,7 @@ void nn_print(NeuralNet nn) {
     printf("\n");
 }
 
+/*
 void nn_train(NeuralNet nn, Matrix inputs, Matrix results) {
     for (size_t i = 0; i < 100000; ++i) {
         // nn_finite_diff(nn, inputs, results);                
@@ -310,6 +363,7 @@ void nn_train(NeuralNet nn, Matrix inputs, Matrix results) {
         if (i%100==0) printf("cost - %lf\n", nn_cost(nn, inputs, results));
     }
 }
+*/
 
 char itoc(char *vocab, size_t i) {
     return vocab[i];
@@ -361,30 +415,60 @@ void ctod(char *vocab, char c, Matrix distrib) {
 }
 
 
+char **get_dataset_lines(char *filepath, size_t *lines_count, size_t *raw_sz) {
+    FILE *f = fopen(filepath, "r");
+    char c = '\x00';
+    size_t offset = 0, curr = 0, idx = 0;
+
+    while (fread(&c, 1, 1, f) == 1) {
+        *raw_sz += 1;
+        if ('\n' == c) {
+            (*lines_count)++;
+        }
+    }
+
+    *raw_sz += *lines_count;
+    fseek(f, 0, SEEK_SET);
+    char **names = malloc(*(lines_count) * sizeof(char *));
+
+    while (fread(&c, 1, 1, f) == 1) {
+        if ('\n' == c) {
+            fseek(f, offset, SEEK_SET);
+            names[idx] = malloc(curr-offset + 3);
+            names[idx][0] = '.';
+            fread(names[idx]+1, curr-offset, 1, f);
+            names[idx][curr-offset+1] = '.';
+            names[idx][curr-offset+2] = '\x00';
+            offset = ++curr;
+            fseek(f, curr, SEEK_SET);
+            idx++;
+        }
+        else {
+            curr++;
+        }
+    }
+
+    return names;
+}
+
 
 int main(int argc, char **argv) {
-    char *raw = "tomer\nkeren";
-    size_t raw_sz = strlen(raw)+1;
-    char *lines[] = {
-        ".tomer.",
-        ".keren."
-    };
-    size_t lines_count = 2;
+    char **lines = NULL;
+    size_t lines_count = 0, raw_sz = 0;
+
+    lines = get_dataset_lines("names2.txt", &lines_count, &raw_sz);
     
     char *vocab = ".abcdefghijklmnopqrstuvwxyz";
     size_t vocab_sz = strlen(vocab);
-    
-    Matrix bigram = mat_rand(28, 28);
     
     Matrix inputs = mat_zeros(raw_sz, 28);
     Matrix outputs = mat_zeros(raw_sz, 28);
 
     compile_dataset(vocab, vocab_sz, lines, lines_count, inputs, outputs);
-
     srandom(0x1337);
     size_t shapes[] = {28, 28, 28};
     NeuralNet nn = nn_init(28, 3, shapes);
-    nn_train(nn, inputs, outputs);
+    nn_train(nn, inputs, outputs, 3);
 
     Matrix test_inputs = mat_zeros(1, 28);
     ctod(vocab, '.', test_inputs);
@@ -392,6 +476,16 @@ int main(int argc, char **argv) {
     char c = dtoc(vocab, NN_LAST_LAYER(nn).result);
     printf("%c", c);
     
+    ctod(vocab, c, test_inputs);
+    nn_passthrough(nn, test_inputs);
+    c = dtoc(vocab, NN_LAST_LAYER(nn).result);
+    printf("%c", c);
+
+    ctod(vocab, c, test_inputs);
+    nn_passthrough(nn, test_inputs);
+    c = dtoc(vocab, NN_LAST_LAYER(nn).result);
+    printf("%c", c);
+
     ctod(vocab, c, test_inputs);
     nn_passthrough(nn, test_inputs);
     c = dtoc(vocab, NN_LAST_LAYER(nn).result);

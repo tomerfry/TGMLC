@@ -1,6 +1,5 @@
 #include <nn.h>
 
-// gcc -g main.c -lm
 int main(int argc, char **argv) {
 
     float inputs_arr[N_SAMPLES * 2*BITS];      // 8 per row

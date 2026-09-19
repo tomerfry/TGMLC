@@ -74,7 +74,7 @@ Matrix compile_dataset(char *str, size_t items_count, Matrix emb) {
         for (int offset = 1-CONTEXT_SZ; offset < (int)strlen(word)-CONTEXT_SZ+1; ++offset) {
             int left = snprintf(context, CONTEXT_SZ+1, "%.*s", offset < 0 ? offset * -1 : 0, "...");
             (void)snprintf(context+left, CONTEXT_SZ-left+1, "%.*s", CONTEXT_SZ-left, &word[offset < 0 ? 0 : offset]);
-            printf("%s --> %c\n", context, word[offset + CONTEXT_SZ]);
+            printf("%s --> %c\n", context, offset + CONTEXT_SZ < (int)strlen(word) ? word[offset + CONTEXT_SZ] : '.');
         }
         printf("\n");
     }

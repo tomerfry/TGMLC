@@ -36,12 +36,27 @@ float rand_float() {
     return ((float)random()) / (float)RAND_MAX;
 }
 
+float scaled_rand_float(int fan_in) {
+    return (2*rand_float() - 1) / sqrtf(fan_in);
+}
+
 Matrix mat_rand(size_t rows, size_t cols) {
     Matrix mat = mat_zeros(rows, cols);
     
     for (size_t r = 0; r < rows; ++r) {
         for (size_t c = 0; c < cols; ++c) {
-            *mat_at(mat, r, c) = rand_float();
+            *mat_at(mat, r, c) = scaled_rand_float(rows);
+        }
+    }
+    return mat;
+}
+
+Matrix mat_allset(size_t rows, size_t cols, float val) {
+    Matrix mat = mat_zeros(rows, cols);
+    
+    for (size_t r = 0; r < rows; ++r) {
+        for (size_t c = 0; c < cols; ++c) {
+            *mat_at(mat, r, c) = val;
         }
     }
     return mat;
@@ -118,7 +133,8 @@ NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
 
     nn[0].input = mat_zeros(1, inputs_amount);
     nn[0].w = mat_rand(inputs_amount, shapes[0]);
-    nn[0].b = mat_rand(1, shapes[0]);
+    // nn[0].b = mat_rand(1, shapes[0]);
+    nn[0].b = mat_zeros(1, shapes[0]);
     nn[0].result = mat_zeros(1, shapes[0]);
     nn[0].w_grad = mat_zeros(inputs_amount, shapes[0]);
     nn[0].b_grad = mat_zeros(1, shapes[0]);
@@ -126,8 +142,10 @@ NeuralNet nn_init(size_t inputs_amount, size_t lcount, size_t shapes[]) {
 
     for (size_t i = 1; i < lcount; ++i) {
         nn[i].input = mat_zeros(1, shapes[i-1]);
-        nn[i].w = mat_rand(shapes[i-1], shapes[i]);
-        nn[i].b = mat_rand(1, shapes[i]);
+        // nn[i].w = mat_rand(shapes[i-1], shapes[i]);
+        nn[i].w = mat_allset(shapes[i-1], shapes[i], 0.001f);
+        // nn[i].b = mat_rand(1, shapes[i]);
+        nn[i].b = mat_zeros(1, shapes[i]);
         nn[i].result = mat_zeros(1, shapes[i]);
         nn[i].w_grad = mat_zeros(shapes[i-1], shapes[i]);
         nn[i].b_grad = mat_zeros(1, shapes[i]);
@@ -267,6 +285,8 @@ void nn_train(NeuralNet nn, Matrix inputs, Matrix results) {
         // nn_finite_diff(nn, inputs, results);                
         nn_backprop(nn, inputs, results);
         nn_learn(nn, inputs, results);
-        if (i%1000==0) printf("cost - %lf\n", nn_cost(nn, inputs, results));
+        if (i%1000==0) {
+            printf("cost - %lf\n", nn_cost(nn, inputs, results));
+        }
     }
 }

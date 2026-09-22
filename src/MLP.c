@@ -2,7 +2,7 @@
 #include <malloc.h>
 #include <string.h>
 
-#define EMB_SZ (2)
+#define EMB_SZ (10)
 #define EMB_COUNT (28)
 #define CONTEXT_SZ (3)
 
@@ -90,11 +90,15 @@ void compile_dataset(char *str, size_t items_count, Matrix emb, Matrix input, Ma
 int main(int argc, char **argv) {
     char *str = strdup("abcdefghijklmnop\nabcdefghijklmnop");
 
-    srand(0x1337);
     Matrix embeddings = mat_rand(EMB_COUNT, EMB_SZ); 
     Matrix input = mat_zeros(strlen(str)-1, CONTEXT_SZ*EMB_SZ);
     Matrix output = mat_zeros(strlen(str)-1, EMB_SZ);
     compile_dataset(str, 2, embeddings, input, output);
+
+    size_t shapes[] = {EMB_SZ*CONTEXT_SZ, 50, 28};
+    NeuralNet nn = nn_init(EMB_SZ*CONTEXT_SZ, 3, shapes);
+    nn_train(nn, input, output);
+
     return 0;
 }
 

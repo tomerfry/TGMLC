@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
     Matrix output = mat_zeros(strlen(str)-1, EMB_SZ);
     compile_dataset(str, 2, embeddings, input, output);
 
-    size_t shapes[] = {EMB_SZ*CONTEXT_SZ, 50, 28};
+    size_t shapes[] = {EMB_SZ*CONTEXT_SZ, 50, EMB_SZ};
     NeuralNet nn = nn_init(EMB_SZ*CONTEXT_SZ, 3, shapes);
     nn_train(nn, input, output);
 

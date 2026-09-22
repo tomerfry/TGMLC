@@ -19,40 +19,43 @@ void split(char *str, char *delim) {
 
 size_t ctoi(char c) {
     if (c == '.') return 0;
-    size_t i = c - 'a';
+    size_t i = c - 'a' + 1;
     if (i < EMB_COUNT) return i;
 }
 
 
 char itoc(size_t i) {
     if (i == 0) return '.';
-    if (i < EMB_COUNT) return i + 'a';
+    if (i < EMB_COUNT) return i + 'a' - 1;
 }
 
 
-Matrix ctom(char c) {
-    Matrix one_hot = mat_zeros(1, EMB_COUNT);
-    if (c == '.') *mat_at(one_hot, 0, 0) = 1.0f;
-    else *mat_at(one_hot, 0, ctoi(c)) = 1.0f;
-}
+void ctoemb(char c, Matrix emb, Matrix res) {
 
-
-char mtoc(Matrix one_hot) {
-    float biggest = *mat_at(one_hot, 0, 0);
-    size_t idx = 0;
-    for (size_t i = 0; i < EMB_COUNT; ++i) {
-        if (*mat_at(one_hot, 0, i) > biggest) {
-            biggest = *mat_at(one_hot, 0, i);
-            idx = i;
-        }
-        i++;
+    if (c == '.') {
+        memcpy(res, mat_at(emb, 0, 0), EMB_SZ*sizeof(float));
+    } else {
+       memcpy(res, mat_at(emb, c - 'a' + 1, 0), EMB_SZ*sizeof(float)); 
     }
-    
-    return itoc(idx);
 }
 
 
-Matrix compile_dataset(char *str, size_t items_count, Matrix emb) {
+void embtoc(Matrix emb, Matrix src, char *c) {
+    size_t i = 0;
+    for (; i < ROWS(emb); ++i) {
+        size_t offset = 0;
+        for (size_t j = 0; j < COLS(emb); ++j) {
+            if (*mat_at(emb, i, j) != *mat_at(src, 0, offset)) break;
+            else offset++;
+        }
+        if (offset == COLS(emb)) break;
+    }
+    if (i < ROWS(emb)) i == 0 ? (*c = '.') : (*c = i + 'a' - 1);
+}
+
+
+
+void compile_dataset(char *str, size_t items_count, Matrix emb, Matrix input, Matrix output) {
     char **items = (char **)malloc(items_count * sizeof(char *));
     bzero(items, items_count * sizeof(char *));
 
@@ -64,19 +67,22 @@ Matrix compile_dataset(char *str, size_t items_count, Matrix emb) {
         tok = strtok(0, "\n");
     }
 
-    Matrix dataset = mat_zeros(strlen(str), CONTEXT_SZ*EMB_SZ);
 
     size_t row = 0;
     char context[CONTEXT_SZ+1] = { 0 };
     for (size_t i = 0; i < items_count; ++i) {
         char * word = items[i];
-        printf("%s\n", word);
-        for (int offset = 1-CONTEXT_SZ; offset < (int)strlen(word)-CONTEXT_SZ+1; ++offset) {
+        for (int offset = -CONTEXT_SZ; offset < (int)strlen(word)-CONTEXT_SZ; ++offset) {
             int left = snprintf(context, CONTEXT_SZ+1, "%.*s", offset < 0 ? offset * -1 : 0, "...");
             (void)snprintf(context+left, CONTEXT_SZ-left+1, "%.*s", CONTEXT_SZ-left, &word[offset < 0 ? 0 : offset]);
             printf("%s --> %c\n", context, offset + CONTEXT_SZ < (int)strlen(word) ? word[offset + CONTEXT_SZ] : '.');
+            
+            for (size_t i = 0; i < CONTEXT_SZ; ++i) {
+                ctoemb(context[i], emb, mat_at(input, row, i*EMB_SZ));
+            }
+            ctoemb(offset + CONTEXT_SZ < (int)strlen(word) ? word[offset + CONTEXT_SZ] : '.', emb, mat_at(output, row, 0));
+            row++;
         }
-        printf("\n");
     }
 }
 
@@ -86,8 +92,9 @@ int main(int argc, char **argv) {
 
     srand(0x1337);
     Matrix embeddings = mat_rand(EMB_COUNT, EMB_SZ); 
-
-    Matrix dataset = compile_dataset(str, 2, embeddings);
+    Matrix input = mat_zeros(strlen(str)-1, CONTEXT_SZ*EMB_SZ);
+    Matrix output = mat_zeros(strlen(str)-1, EMB_SZ);
+    compile_dataset(str, 2, embeddings, input, output);
     return 0;
 }
 
